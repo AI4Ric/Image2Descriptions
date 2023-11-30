@@ -1,0 +1,42 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Django stuff:
+*.log
+db.sqlite3
+db.sqlite3-journal
+
+# virtual environment
+venv/
+
+# Spyder project settings
+.spyderproject
+.ropeproject
+
+# VS Code
+.vscode/
+
+# Ignore Personal Notes
+PersonalNotes.txt
