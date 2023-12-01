@@ -12,12 +12,21 @@ from .models import UserUpload
 import zipfile
 from django.http import HttpResponse
 from django.views.decorators.http import require_POST
+from .processing import create_dataframe
+
 
 
 @login_required
 def file_upload(request):
     if request.method == 'POST':
         files = request.FILES.getlist('image_files')
+
+        # Check each file for correct format before processing
+        for file in files:
+            if not re.match(r'^\d+_\d+_.+\.jpg$', file.name.lower()):
+                error_message = "Files must be in the format 'lotNumber_vendorNumber_Something Else.jpg'."
+                return render(request, 'AIDescGen/home.html', {'error_message': error_message})
+            
         if files:
             # Create a timestamped folder for the upload
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -33,6 +42,21 @@ def file_upload(request):
 
             user_upload = UserUpload(user=request.user, file=os.path.join(timestamp, filename),folder_name=timestamp)
             user_upload.save()
+
+            file_paths = [os.path.join(user_folder, file.name) for file in files]
+            df = create_dataframe(file_paths)
+
+            # Check if dataframe creation was successful
+            if isinstance(df, str):
+                # Handle the case where no valid files were processed
+                return render(request, 'AIDescGen/home.html', {'error_message': df})
+            
+            # Save the dataframe to a CSV file in the user's documents directory
+            documents_folder = os.path.join(settings.MEDIA_ROOT, f'user_{request.user.id}', 'documents')
+            os.makedirs(documents_folder, exist_ok=True)  # Create the directory if it doesn't exist
+            csv_filename = os.path.join(documents_folder, f"{timestamp}_data.csv")
+            df.to_csv(csv_filename, index=False)
+
 
             # Redirect or inform the user of successful upload
             return HttpResponseRedirect(reverse('home'))
