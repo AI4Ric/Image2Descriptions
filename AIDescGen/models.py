@@ -14,11 +14,17 @@ def user_directory_path(instance, filename):
 
 class UserUpload(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
-    # Your fields like 'file', 'timestamp', 'status', etc.
     timestamp = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=100)
-    file = models.FileField(upload_to=user_directory_path)  # Define 'user_directory_path' function to set upload path
+    file = models.FileField(upload_to=user_directory_path)
+    folder_name = models.CharField(max_length=255, default='default_folder_name', editable=False)   
     
     def get_download_url(self):
         # Return the URL to download the file
         return self.file.url
+    
+    def delete(self, *args, **kwargs):
+        self.file.delete(save=False)  # Delete the file
+        super(UserUpload, self).delete(*args, **kwargs)
+
+        

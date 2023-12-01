@@ -19,23 +19,29 @@
     </div>
     <hr>
     <h2>Descriptions Progress</h2>
-    <table>
-        <tr>
-            <th>Time Uploaded</th>
-            <th>Status</th>
-            <th></th> <!-- For the download link -->
-        </tr>
-        {% for upload in user_files %}
-        <tr>
-            <td>{{ upload.display_timestamp }}</td>
-            <td>{{ upload.status }}</td>
-            <td><a href="{{ upload.get_download_url }}">Download Images</a></td>
-        </tr>
-        {% empty %}
-        <tr>
-            <td colspan="3">No files have been uploaded yet.</td>
-        </tr>
-        {% endfor %}
-    </table>
+    <form method="post" action="{% url 'delete_files' %}">
+        {% csrf_token %}
+        <table>
+            <tr>
+                <th></th> <!-- Checkbox column -->
+                <th>Time Uploaded</th>
+                <th>Status</th>
+                <th></th> <!-- For the download link -->
+            </tr>
+            {% for upload in user_files %}
+            <tr>
+                <td><input type="checkbox" name="file_ids" value="{{ upload.id }}"></td>
+                <td>{{ upload.timestamp|date:"Y-m-d H:i:s" }}</td>
+                <td>{{ upload.status }}</td>
+                <td><a href="{% url 'download_files' upload.folder_name %}">Download Images</a></td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="4">No files have been uploaded yet.</td>
+            </tr>
+            {% endfor %}
+        </table>
+        <button type="submit">Delete Selected</button>
+    </form>
 </body>
 </html>
