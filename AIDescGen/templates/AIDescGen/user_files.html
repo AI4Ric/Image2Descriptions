@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>User Files</title>
+    <style>
+        /* Add your CSS styling here */
+        body { font-family: Arial, sans-serif; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .logout { float: right; }
+        .header { display: flex; justify-content: space-between; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="{% url 'home' %}" class="home">Home</a>
+        <a href="{% url 'logout' %}" class="logout">Logout</a>
+    </div>
+    <hr>
+    <h2>Descriptions Progress</h2>
+    <table>
+        <tr>
+            <th>Time Uploaded</th>
+            <th>Status</th>
+            <th></th> <!-- For the download link -->
+        </tr>
+        {% for upload in user_files %}
+        <tr>
+            <td>{{ upload.display_timestamp }}</td>
+            <td>{{ upload.status }}</td>
+            <td><a href="{{ upload.get_download_url }}">Download Images</a></td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="3">No files have been uploaded yet.</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>
