@@ -40,3 +40,6 @@ venv/
 
 # Ignore Personal Notes
 PersonalNotes.txt
+
+#Ignore Media Files
+media/
