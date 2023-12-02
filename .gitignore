@@ -41,5 +41,8 @@ venv/
 # Ignore Personal Notes
 PersonalNotes.txt
 
-#Ignore Media Files
+# Ignore Media Files
 media/
+
+# Ignore environmental variables
+.env 
