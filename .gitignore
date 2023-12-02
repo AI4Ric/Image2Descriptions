@@ -43,6 +43,7 @@ PersonalNotes.txt
 
 # Ignore Media Files
 media/
+extraR/
 
 # Ignore environmental variables
 .env 
