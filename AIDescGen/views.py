@@ -12,7 +12,7 @@ from .models import UserUpload
 import zipfile
 from django.http import HttpResponse
 from django.views.decorators.http import require_POST
-from .processing import create_dataframe
+from .processing import create_dataframe, generate_descriptions
 
 
 
@@ -57,6 +57,8 @@ def file_upload(request):
             csv_filename = os.path.join(documents_folder, f"{timestamp}_data.csv")
             df.to_csv(csv_filename, index=False)
 
+            # Cell generate_descriptions function
+            generate_descriptions(csv_filename, user_folder)
 
             # Redirect or inform the user of successful upload
             return HttpResponseRedirect(reverse('home'))
