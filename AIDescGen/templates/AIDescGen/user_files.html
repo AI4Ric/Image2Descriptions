@@ -2,15 +2,8 @@
 <html>
 <head>
     <title>User Files</title>
-    <style>
-        /* Add your CSS styling here */
-        body { font-family: Arial, sans-serif; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .logout { float: right; }
-        .header { display: flex; justify-content: space-between; margin-bottom: 20px; }
-    </style>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'AIDescGen/css/styles.css' %}">
 </head>
 <body>
     <div class="header">
@@ -29,10 +22,15 @@
                 <th></th> <!-- For the download link -->
             </tr>
             {% for upload in user_files %}
-            <tr>
+            <tr data-task-id="{{ upload.task_id }}">
                 <td><input type="checkbox" name="file_ids" value="{{ upload.id }}"></td>
                 <td>{{ upload.timestamp|date:"Y-m-d H:i:s" }}</td>
-                <td>{{ upload.status }}</td>
+                <td>
+                    <div id="status-{{ upload.task_id }}">Waiting...</div>
+                    <div class="progress-container">
+                        <div id="progress-bar-{{ upload.task_id }}" class="progress-bar" style="width: 0%;"></div>
+                    </div>
+                </td>
                 <td><a href="{% url 'download_files' upload.folder_name %}">Download Images</a></td>
             </tr>
             {% empty %}
@@ -43,5 +41,6 @@
         </table>
         <button type="submit">Delete Selected</button>
     </form>
+    <script src="{% static 'AIDescGen/js/update_progress.js' %}"></script>
 </body>
 </html>

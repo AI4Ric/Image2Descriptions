@@ -23,5 +23,11 @@
     {% if error_message %}
         <p style="color: red;">{{ error_message }}</p>
     {% endif %}
+
+    <!-- Display success message if any -->
+    {% if success_message %}
+        <p style="color: green;">{{ success_message }}</p>
+        <a href="{% url 'user_files' %}">Check Progress</a>
+    {% endif %}
 </body>
 </html>

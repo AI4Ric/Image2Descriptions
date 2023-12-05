@@ -101,3 +101,5 @@ def generate_descriptions(csv_path, images_folder_path):
     except Exception as e:
         logger.exception(f"Error in generate_descriptions: {e}")
         return False
+
+

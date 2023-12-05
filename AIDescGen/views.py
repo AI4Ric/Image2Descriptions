@@ -13,6 +13,10 @@ import zipfile
 from django.http import HttpResponse
 from django.views.decorators.http import require_POST
 from .processing import create_dataframe, generate_descriptions
+from .tasks import generate_descriptions_task
+from celery.result import AsyncResult
+from django.http import JsonResponse
+
 
 
 
@@ -58,10 +62,13 @@ def file_upload(request):
             df.to_csv(csv_filename, index=False)
 
             # Cell generate_descriptions function
-            generate_descriptions(csv_filename, user_folder)
+            task = generate_descriptions_task.delay(csv_filename, user_folder)
+            user_upload.task_id = task.id  # Save the Celery task ID to the upload record
+            user_upload.save()
 
             # Redirect or inform the user of successful upload
-            return HttpResponseRedirect(reverse('home'))
+            success_message = "Your files are being processed. Please check the status on the progress page."
+            return render(request, 'AIDescGen/home.html', {'success_message': success_message})
 
     # Your code to handle GET requests or show the form
     return render(request, 'AIDescGen/home.html')
@@ -119,6 +126,14 @@ def delete_files(request):
             print(f"Error deleting file: {e}")
 
     return HttpResponseRedirect(reverse('user_files'))
+
+def get_task_status(request, task_id):
+    task_result = AsyncResult(task_id)
+    response_data = {
+        'status': task_result.status,
+        'result': task_result.result if task_result.result else {}
+    }
+    return JsonResponse(response_data)
 
 
 import logging
