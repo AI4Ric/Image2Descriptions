@@ -18,7 +18,8 @@ class UserUpload(models.Model):
     status = models.CharField(max_length=100)
     file = models.FileField(upload_to=user_directory_path)
     folder_name = models.CharField(max_length=255, default='default_folder_name', editable=False)
-    task_id = models.CharField(max_length=255, blank=True, null=True)   
+    task_id = models.CharField(max_length=255, blank=True, null=True)
+    csv_file_name = models.CharField(max_length=255, blank=True, null=True)   
     
     def get_download_url(self):
         # Return the URL to download the file

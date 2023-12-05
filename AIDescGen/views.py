@@ -16,6 +16,8 @@ from .processing import create_dataframe, generate_descriptions
 from .tasks import generate_descriptions_task
 from celery.result import AsyncResult
 from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+
 
 
 
@@ -60,6 +62,8 @@ def file_upload(request):
             os.makedirs(documents_folder, exist_ok=True)  # Create the directory if it doesn't exist
             csv_filename = os.path.join(documents_folder, f"{timestamp}_data.csv")
             df.to_csv(csv_filename, index=False)
+            user_upload.csv_file_name = csv_filename
+            user_upload.save()
 
             # Cell generate_descriptions function
             task = generate_descriptions_task.delay(csv_filename, user_folder)
@@ -129,12 +133,27 @@ def delete_files(request):
 
 def get_task_status(request, task_id):
     task_result = AsyncResult(task_id)
+    status = "Completed" if task_result.status == "SUCCESS" else task_result.status
     response_data = {
-        'status': task_result.status,
+        'status': status,
         'result': task_result.result if task_result.result else {}
     }
     return JsonResponse(response_data)
 
+@login_required
+def download_csv(request, task_id):
+    # Retrieve the UserUpload object based on the task_id
+    upload = get_object_or_404(UserUpload, task_id=task_id, user=request.user)
+
+    # Define the path to the CSV file
+    csv_file_path = os.path.join(settings.MEDIA_ROOT, f'user_{request.user.id}', 'documents', upload.csv_file_name)
+
+    # Open the file for reading
+    with open(csv_file_path, 'rb') as csv_file:
+        response = HttpResponse(csv_file, content_type='text/csv')
+        # Set the content disposition header to prompt for download
+        response['Content-Disposition'] = f'attachment; filename="{upload.csv_file_name}"'
+        return response
 
 import logging
 

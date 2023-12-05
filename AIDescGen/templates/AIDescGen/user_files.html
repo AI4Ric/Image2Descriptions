@@ -31,7 +31,11 @@
                         <div id="progress-bar-{{ upload.task_id }}" class="progress-bar" style="width: 0%;"></div>
                     </div>
                 </td>
-                <td><a href="{% url 'download_files' upload.folder_name %}">Download Images</a></td>
+                <td>
+                    <a href="{% url 'download_files' upload.folder_name %}">Download Images</a>
+                    <!-- Initially hidden download link -->
+                    <a href="{% url 'download_csv' upload.task_id %}" id="download-{{ upload.task_id }}" style="display:none;">Download CSV</a>
+                </td>
             </tr>
             {% empty %}
             <tr>
