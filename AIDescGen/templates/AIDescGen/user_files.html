@@ -32,7 +32,7 @@
                     </div>
                 </td>
                 <td>
-                    <a href="{% url 'download_files' upload.folder_name %}">Download Images</a>
+                    <a href="{% url 'download_files' upload.folder_name %}" class="download-images-link" data-task-id="{{ upload.task_id }}" style="display:none;">Download Images</a>
                     <!-- Initially hidden download link -->
                     <a href="{% url 'download_csv' upload.task_id %}" id="download-{{ upload.task_id }}" style="display:none;">Download CSV</a>
                 </td>

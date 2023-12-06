@@ -152,7 +152,7 @@ def download_csv(request, task_id):
     with open(csv_file_path, 'rb') as csv_file:
         response = HttpResponse(csv_file, content_type='text/csv')
         # Set the content disposition header to prompt for download
-        response['Content-Disposition'] = f'attachment; filename="{upload.csv_file_name}"'
+        response['Content-Disposition'] = f'attachment; filename="result.csv"'
         return response
 
 import logging
