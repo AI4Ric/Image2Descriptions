@@ -29,7 +29,7 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 API_KEY = os.getenv('API_KEY')
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['192.168.1.23']
 
 
 # Application definition
