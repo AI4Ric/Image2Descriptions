@@ -1,0 +1,14 @@
+<nav class="navbar">
+    <div class="navbar__container">
+        <a href="/" class="navbar__logo">NoName</a>
+        <div class="navbar__menu">
+            <a href="/pricing" class="navbar__item">Pricing</a>
+            <!-- <a href="/blog" class="navbar__item">Blog</a> -->
+            <a href="{% url 'user_files' %}" class="navbar__item">Docs</a>
+            <a href="/signup" class="navbar__item">{{ user.username }}</a>
+            <a href="{% url 'logout' %}" class="navbar__item navbar__item--highlight">Logout</a>
+        </div>
+    </div>
+</nav>
+
+  

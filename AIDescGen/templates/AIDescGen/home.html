@@ -1,33 +1,32 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Home</title>
-</head>
-<body>
-    {% if user.is_authenticated %}
-        <p>Welcome, {{ user.username }}!</p>
-        <a href="{% url 'logout' %}">Logout</a>
-        <a href="{% url 'user_files' %}">Files</a>
-    {% endif %}
-    <nav>
-        <!-- Navigation bar content -->
-    </nav>
-    <h1>Welcome to...</h1>
-    <form method="post" action="{% url 'home' %}" enctype="multipart/form-data">
-        {% csrf_token %}
-        <input type="file" name="image_files" accept="image/jpeg" multiple>
-        <button type="submit">Upload Files</button>
-    </form>
-    
-    <!-- Display error message if any -->
-    {% if error_message %}
-        <p style="color: red;">{{ error_message }}</p>
-    {% endif %}
+{% extends "AIDescGen/base.html" %}
 
-    <!-- Display success message if any -->
-    {% if success_message %}
-        <p style="color: green;">{{ success_message }}</p>
-        <a href="{% url 'user_files' %}">Check Progress</a>
-    {% endif %}
-</body>
-</html>
+{% block content %}
+    <div class="page-title">
+        <h1>Generate Descriptions from Images</h1>
+    </div>
+    <div class="page-description">
+        <p>Unleash the power of our cutting-edge technology to generate realistic, captivating descriptions of images.</p>
+    </div>
+    <div class="upload-container">
+        <div class="task-label">Task</div>
+        <form id="image-upload-form" method="post" action="{% url 'home' %}" enctype="multipart/form-data">
+            {% csrf_token %}
+            <input type="file" id="image_files" name="image_files" accept="image/jpeg" multiple hidden onchange="toggleGenerateButton()">
+            <button type="button" onclick="document.getElementById('image_files').click()" class="upload-btn">Add Images</button>
+            <div class="upload-dropzone" onclick="document.getElementById('image_files').click()">
+                Drag and drop a file or select Add Images
+            </div>
+
+            <button type="submit" id="generate-btn" class="generate-btn" disabled>Generate</button>
+        </form>
+
+        <!-- Error and success messages -->
+        {% if error_message %}
+            <div class="message error-message">{{ error_message }}</div>
+        {% endif %}
+        {% if success_message %}
+            <div class="message success-message">{{ success_message }}</div>
+            <a href="{% url 'user_files' %}" class="progress-link">Check Progress</a>
+        {% endif %}
+    </div>
+{% endblock %}
