@@ -23,6 +23,15 @@
         var generateButton = document.getElementById('generate-btn');
         generateButton.disabled = !files.length;
         }
+
+        document.addEventListener('DOMContentLoaded', (event) => {
+            const mobileMenu = document.getElementById('mobile-menu');
+            const navBar = document.querySelector('.navbar');
+            
+            mobileMenu.addEventListener('click', () => {
+                navBar.classList.toggle('active');
+            });
+        });
     </script>
 </body>
 </html>

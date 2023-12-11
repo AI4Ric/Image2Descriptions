@@ -1,50 +1,47 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>User Files</title>
-    {% load static %}
-    <link rel="stylesheet" href="{% static 'AIDescGen/css/styles.css' %}">
-</head>
-<body>
-    <div class="header">
-        <a href="{% url 'home' %}" class="home">Home</a>
-        <a href="{% url 'logout' %}" class="logout">Logout</a>
+{% extends "AIDescGen/base.html" %}
+
+{% block content %}
+{% load static %}
+<link rel="stylesheet" href="{% static 'AIDescGen/css/styles.css' %}">
+    <div class="table-container">
+        <h2>Descriptions Progress</h2>
+        <form method="post" action="{% url 'delete_files' %}">
+            {% csrf_token %}
+            <table class="styled-table">
+                <thead>
+                    <tr>
+                        <th></th> <!-- Checkbox column -->
+                        <th>Time Uploaded</th>
+                        <th>Status</th>
+                        <th>Actions</th> <!-- For the download link -->
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for upload in user_files %}
+                    <tr data-task-id="{{ upload.task_id }}">
+                        <td><input type="checkbox" name="file_ids" value="{{ upload.id }}"></td>
+                        <td>{{ upload.timestamp|date:"Y-m-d H:i:s" }}</td>
+                        <td>
+                            <div id="status-{{ upload.task_id }}">Waiting...</div>
+                            <div class="progress-container">
+                                <div id="progress-bar-{{ upload.task_id }}" class="progress-bar" style="width: 0%;"></div>
+                            </div>
+                        </td>
+                        <td class="actions-cell">
+                            <a href="{% url 'download_files' upload.folder_name %}" class="download-images-link" data-task-id="{{ upload.task_id }}" style="display:none;">Download Images</a>
+                            <!-- Initially hidden download link -->
+                            <a href="{% url 'download_csv' upload.task_id %}" class="download-images-link" id="download-{{ upload.task_id }}" style="display:none;">Download CSV</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="4">No files have been uploaded yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <button type="submit" class="delete-selected">Delete Selected</button>
+        </form>
     </div>
-    <hr>
-    <h2>Descriptions Progress</h2>
-    <form method="post" action="{% url 'delete_files' %}">
-        {% csrf_token %}
-        <table>
-            <tr>
-                <th></th> <!-- Checkbox column -->
-                <th>Time Uploaded</th>
-                <th>Status</th>
-                <th></th> <!-- For the download link -->
-            </tr>
-            {% for upload in user_files %}
-            <tr data-task-id="{{ upload.task_id }}">
-                <td><input type="checkbox" name="file_ids" value="{{ upload.id }}"></td>
-                <td>{{ upload.timestamp|date:"Y-m-d H:i:s" }}</td>
-                <td>
-                    <div id="status-{{ upload.task_id }}">Waiting...</div>
-                    <div class="progress-container">
-                        <div id="progress-bar-{{ upload.task_id }}" class="progress-bar" style="width: 0%;"></div>
-                    </div>
-                </td>
-                <td>
-                    <a href="{% url 'download_files' upload.folder_name %}" class="download-images-link" data-task-id="{{ upload.task_id }}" style="display:none;">Download Images</a>
-                    <!-- Initially hidden download link -->
-                    <a href="{% url 'download_csv' upload.task_id %}" id="download-{{ upload.task_id }}" style="display:none;">Download CSV</a>
-                </td>
-            </tr>
-            {% empty %}
-            <tr>
-                <td colspan="4">No files have been uploaded yet.</td>
-            </tr>
-            {% endfor %}
-        </table>
-        <button type="submit">Delete Selected</button>
-    </form>
     <script src="{% static 'AIDescGen/js/update_progress.js' %}"></script>
-</body>
-</html>
+{% endblock %}
