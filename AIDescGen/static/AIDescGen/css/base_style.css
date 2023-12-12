@@ -181,6 +181,10 @@ body {
     color: #1dabb8;
 }
 
+.h-5 {
+    height: 1.25rem;
+}
+
 /* Responsive styling */
 @media (max-width: 768px) {
     .footer__container {

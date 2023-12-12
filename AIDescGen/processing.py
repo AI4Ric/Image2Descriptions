@@ -24,7 +24,7 @@ def create_dataframe(file_paths):
             parts = file_name.split('_')
             lot_number, vendor_number = parts[0], parts[1]
             lot_numbers.append(int(lot_number))
-            vendor_numbers.append(vendor_number)
+            vendor_numbers.append("C" + vendor_number)
             file_names.append(file_name)
 
 
@@ -65,7 +65,9 @@ def encode_image(image_path):
     
 def parse_wait_time(error_message):
     match = re.search(r"Please try again in ([\d.]+)s", error_message)
-    return float(match.group(1)) if match else 5
+    wait_time = float(match.group(1)) if match else 5
+    logger.info(f"Parsed wait time: {wait_time} seconds for message: {error_message}")
+    return wait_time
 
 def update_descriptions(csv_path, api_key, images_folder_path, session, prompt, progress_callback=None):
     df = pd.read_csv(csv_path)
@@ -78,6 +80,8 @@ def update_descriptions(csv_path, api_key, images_folder_path, session, prompt, 
         "Authorization": f"Bearer {api_key}"
     }
     total_rows = len(df)
+    consecutive_failures = 0
+    max_consecutive_failures = 3
     for index, row in df.iterrows():
         if pd.isna(row['Description']) or row['Description'] == '':
             try_again = True
@@ -158,6 +162,7 @@ def update_descriptions(csv_path, api_key, images_folder_path, session, prompt, 
                             return df, rate_limit_reached
 
                         wait_time = parse_wait_time(error_message)
+                        logger.info(f"Received rate limit error message: {error_message}")
                         print(f"Rate limit reached. Waiting {wait_time} seconds to retry...")
                         time.sleep(wait_time)
 
@@ -177,6 +182,13 @@ def update_descriptions(csv_path, api_key, images_folder_path, session, prompt, 
             if attempts >= 3:
                 logger.info(f"Max retries reached for Lot {row.get('Lot number', 'Unknown')}. Moving to next lot.")
                 failed_lots.append(row['Lot number'])
+                consecutive_failures += 1
+                if consecutive_failures >= max_consecutive_failures:
+                    logger.error("Maximum consecutive failures reached. Stopping the process.")
+                    break
+            else:
+                consecutive_failures = 0
+
     logger.info(f"Type of df at end of update_descriptions: {type(df)}")
     return df, rate_limit_reached
 
