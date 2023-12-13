@@ -30,6 +30,7 @@ db.sqlite3-journal
 
 # virtual environment
 venv/
+venv_linux/
 
 # Spyder project settings
 .spyderproject
@@ -40,7 +41,7 @@ venv/
 
 # Ignore Personal Notes
 PersonalNotes.txt
-
+datadump.json
 # Ignore Media Files
 media/
 extraR/

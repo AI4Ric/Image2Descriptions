@@ -60,7 +60,7 @@ def file_upload(request):
                 filename = fs.save(file.name, file)
                 file_url = fs.url(filename)
 
-            user_upload = UserUpload(user=request.user, file=os.path.join(timestamp, filename),folder_name=timestamp)
+            user_upload = UserUpload(user=request.user, status='Initializing', file=os.path.join(timestamp, filename),folder_name=timestamp)
             user_upload.save()
 
             file_paths = [os.path.join(user_folder, file.name) for file in files]
@@ -80,7 +80,9 @@ def file_upload(request):
             user_upload.save()
 
             # Cell generate_descriptions function
-            task = generate_descriptions_task.delay(csv_filename, user_folder)
+            upload_id = user_upload.id
+            print(upload_id)
+            task = generate_descriptions_task.delay(upload_id, csv_filename, user_folder)
             user_upload.task_id = task.id  # Save the Celery task ID to the upload record
             user_upload.save()
 
