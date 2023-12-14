@@ -40,11 +40,21 @@ def user_login(request):
 def file_upload(request):
     if request.method == 'POST':
         files = request.FILES.getlist('image_files')
+        include_vendor_no = 'include_vendor_no' in request.POST
+        include_category = 'include_category' in request.POST
 
-        # Check each file for correct format before processing
+        # Determine the regex pattern based on user selection
+        if include_vendor_no and include_category:
+            regex_pattern = r'^(\d+)_(\d+)_(\w+)_?.*\.jpg$'
+        elif include_vendor_no or include_category:
+            regex_pattern = r'^(\d+)_(\d+|\w+)_?.*\.jpg$'
+        else:
+            regex_pattern = r'^(\d+)(_?.*)?\.jpg$'
+
+        # Check each file for correct format before processing    
         for file in files:
-            if not re.match(r'^\d+_\d+_.+\.jpg$', file.name.lower()):
-                error_message = "Files must be in the format 'lotNumber_vendorNumber_Something Else.jpg'."
+            if not re.match(regex_pattern, file.name.lower()):
+                error_message = "File naming format is incorrect based on your selections."
                 return render(request, 'AIDescGen/home.html', {'error_message': error_message})
             
         if files:
@@ -64,7 +74,7 @@ def file_upload(request):
             user_upload.save()
 
             file_paths = [os.path.join(user_folder, file.name) for file in files]
-            df = create_dataframe(file_paths)
+            df = create_dataframe(file_paths, include_vendor_no, include_category)
 
             # Check if dataframe creation was successful
             if isinstance(df, str):

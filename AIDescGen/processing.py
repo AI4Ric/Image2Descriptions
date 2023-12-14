@@ -10,43 +10,58 @@ import base64
 
 logger = logging.getLogger(__name__)
 
-def create_dataframe(file_paths):
+def create_dataframe(file_paths, include_vendor_no=False, include_category=False):
+    # Initialize a list to store the data
+    data = []
 
-    # Initialize lists to store the data
-    lot_numbers = []
-    vendor_numbers = []
-    file_names = []
+    # Define default values for Vendor No and Category
+    default_vendor_no = 'C99999'
+    default_category = 'No Category'
 
-    # Iterate through the file paths and extract the lot number
+    # Iterate through the file paths and extract the Lot No
     for file_path in file_paths:
         file_name = os.path.basename(file_path)
-        if file_name.lower().endswith('.jpg') and re.match(r"^\d+_\d+_.+\.jpg$", file_name):
-            parts = file_name.split('_')
-            lot_number, vendor_number = parts[0], parts[1]
-            lot_numbers.append(int(lot_number))
-            vendor_numbers.append("C" + vendor_number)
-            file_names.append(file_name)
+        name, extension = os.path.splitext(file_name)
 
+        if extension.lower() == '.jpg':
+            parts = name.split('_')
 
-    # Check if any valid files were processed
-    if not lot_numbers:
+            lot_no = parts[0] if parts[0].isdigit() else None
+
+            if lot_no is None:
+                continue
+
+            # Conditional extraction based on the checkboxes and the number of parts
+            if include_vendor_no and len(parts) > 1:
+                vendor_no = 'C' + parts[1]
+            else:
+                vendor_no = default_vendor_no
+
+            if include_category and len(parts) > (2 if include_vendor_no else 1):
+                # If vendor number is not included, category would be in parts[1]
+                category_index = 2 if include_vendor_no else 1
+                category = parts[category_index]
+            else:
+                category = default_category
+
+            data.append((lot_no, vendor_no, category, '', '', 0, 0, 1, file_name))
+
+    if not data:
         return "No valid files were processed."
+    
+    df = pd.DataFrame(data, columns=[
+        'Lot No', 
+        'Vendor', 
+        'Category', 
+        'Description', 
+        'Reserve', 
+        'Low estimate', 
+        'High estimate', 
+        'Starting bid', 
+        'ImageName'
+    ])
 
-    # Create a DataFrame
-    data = {
-        'Lot number': lot_numbers,
-        'Vendor number': vendor_numbers,
-        'Description': [''] * len(lot_numbers),
-        'Reserve': [''] * len(lot_numbers),
-        'Low estimate': [0] * len(lot_numbers),
-        'High estimate': [0] * len(lot_numbers),
-        'Starting bid': [1] * len(lot_numbers),
-        'ImageName': file_names
-        # ... other fields ...
-    }
-
-    df = pd.DataFrame(data)
-    df = df.sort_values(by='Lot number', ascending=True)
+    df = df.sort_values(by='Lot No', ascending=True)
     df = df.reset_index(drop=True)
 
     return df
@@ -93,13 +108,13 @@ def update_descriptions(csv_path, api_key, images_folder_path, session, prompt, 
                     original_image_name = row['ImageName']
                     original_image_path = os.path.join(images_folder_path, original_image_name)
 
-                    image_name = f"{row['Lot number']}.JPG"
+                    image_name = f"{row['Lot No']}.JPG"
                     image_path = os.path.join(images_folder_path, image_name)
 
                     if os.path.exists(original_image_path):
                         os.rename(original_image_path, image_path)
                     elif not os.path.exists(image_path):
-                        logger.error(f"Image file not found for Lot {row['Lot number']}")
+                        logger.error(f"Image file not found for Lot {row['Lot No']}")
                         continue
 
                     # Import image
@@ -143,7 +158,7 @@ def update_descriptions(csv_path, api_key, images_folder_path, session, prompt, 
                     message = choice['message']['content']
                     df.at[index, 'Description'] = message
                     df.at[index, 'total_tokens'] = usage['total_tokens']
-                    print(f"Updated Lot {row['Lot number']} with new description.")
+                    print(f"Updated Lot {row['Lot No']} with new description.")
                     try_again = False
                     df.to_csv(csv_path, index=False)
                     if progress_callback:
@@ -156,32 +171,36 @@ def update_descriptions(csv_path, api_key, images_folder_path, session, prompt, 
                         print(f"Rate Limit Error Response: {error_content}")
 
                         error_message = error_content.get("error", {}).get("message", "")
-                        if "RPD" in error_message:
+                        if "RPD" in error_message or "insufficient_quota" in error_content.get("error", {}).get("type", ""):
                             rate_limit_reached = True
-                            print("Daily request limit reached. Exiting script. Please try again later.")
-                            return df, rate_limit_reached
+                            logger.info(f"Daily limit or insufficient quota reached. Switching API key. Error: {error_message}")
+                            break
+                        elif "RPM" in error_message or "TPM" in error_message:
+                            wait_time = parse_wait_time(error_message)
+                            logger.info(f"Per minute limit reached. Waiting {wait_time} seconds to retry... Error: {error_message}")
+                            time.sleep(wait_time)
 
-                        wait_time = parse_wait_time(error_message)
-                        logger.info(f"Received rate limit error message: {error_message}")
-                        print(f"Rate limit reached. Waiting {wait_time} seconds to retry...")
                         time.sleep(wait_time)
 
-                    attempts += 1
+                        attempts += 1
+                    else:
+                        logger.error(f"HTTP error occurred: {http_err}")
+                        attempts += 1
 
                 except requests.exceptions.RequestException as req_err:
                     logger.error(f"Request error occurred: {req_err}")
                     attempts += 1
 
                 except Exception as e:
-                    logger.exception(f"An error occurred for Lot {row.get('Lot number', 'Unknown')}")  # Logs the error with traceback
-                    failed_lots.append(row.get('Lot number', 'Unknown'))
+                    logger.exception(f"An error occurred for Lot {row.get('Lot No', 'Unknown')}")  # Logs the error with traceback
+                    failed_lots.append(row.get('Lot No', 'Unknown'))
                     break
                 finally:
                     df.to_csv(csv_path, index=False)
 
             if attempts >= 3:
-                logger.info(f"Max retries reached for Lot {row.get('Lot number', 'Unknown')}. Moving to next lot.")
-                failed_lots.append(row['Lot number'])
+                logger.info(f"Max retries reached for Lot {row.get('Lot No', 'Unknown')}. Moving to next lot.")
+                failed_lots.append(row['Lot No'])
                 consecutive_failures += 1
                 if consecutive_failures >= max_consecutive_failures:
                     logger.error("Maximum consecutive failures reached. Stopping the process.")
