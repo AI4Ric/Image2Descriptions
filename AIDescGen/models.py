@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User
-import os
+#import os
+import posixpath
 from django.conf import settings
 
 def user_directory_path(instance, filename):
@@ -8,7 +9,8 @@ def user_directory_path(instance, filename):
     # 'instance' is an instance of the model where the FileField is defined.
     # 'filename' is the original name of the uploaded file.
     upload_date = instance.timestamp.strftime('%Y%m%d')
-    return os.path.join(f'user_{instance.user.id}', upload_date, filename)
+    #return os.path.join(f'user_{instance.user.id}', upload_date, filename)
+    return posixpath.join(f'user_{instance.user.id}', upload_date, filename)
 
 class UserUpload(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -30,6 +32,7 @@ class UserUpload(models.Model):
     
     def delete(self, *args, **kwargs):
         self.file.delete(save=False)  # Delete the file
-        super(UserUpload, self).delete(*args, **kwargs)
+        super().delete(*args, **kwargs)
+        #super(UserUpload, self).delete(*args, **kwargs)
 
         

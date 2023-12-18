@@ -7,10 +7,17 @@ from django.conf import settings
 import time
 import logging
 import base64
+from urllib.parse import urlparse
+from django.core.files.storage import default_storage
+from io import StringIO
+import posixpath
+from django.core.files.base import ContentFile
+from io import BytesIO
+
 
 logger = logging.getLogger(__name__)
 
-def create_dataframe(file_paths, include_vendor_no=False, include_category=False):
+def create_dataframe(file_urls, include_vendor_no=False, include_category=False):
     # Initialize a list to store the data
     data = []
 
@@ -19,8 +26,9 @@ def create_dataframe(file_paths, include_vendor_no=False, include_category=False
     default_category = 'No Category'
 
     # Iterate through the file paths and extract the Lot No
-    for file_path in file_paths:
-        file_name = os.path.basename(file_path)
+    for file_url in file_urls:
+        parsed_url = urlparse(file_url)
+        file_name = os.path.basename(parsed_url.path)
         name, extension = os.path.splitext(file_name)
 
         if extension.lower() == '.jpg':
@@ -74,9 +82,17 @@ with open(prompt_path, 'r', encoding='utf-8') as file:
             prompt = file.read()
 
 # Function to encode the image
-def encode_image(image_path):
-    with open(image_path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode('utf-8')
+def encode_image(image_key):
+    if default_storage.exists(image_key):
+        with default_storage.open(image_key, "rb") as image_file:
+            # Read the image file in a buffer
+            buffer = BytesIO(image_file.read())
+            # Encode the buffer content in base64
+            base64_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            return base64_image
+    else:
+        # Handle the case where the image file does not exist
+        return None 
     
 def parse_wait_time(error_message):
     match = re.search(r"Please try again in ([\d.]+)s", error_message)
@@ -84,8 +100,12 @@ def parse_wait_time(error_message):
     logger.info(f"Parsed wait time: {wait_time} seconds for message: {error_message}")
     return wait_time
 
-def update_descriptions(csv_path, api_key, images_folder_path, session, prompt, progress_callback=None):
-    df = pd.read_csv(csv_path)
+def update_descriptions(csv_file_key, api_key, images_folder_path, session, prompt, progress_callback=None):
+    if default_storage.exists(csv_file_key):
+        with default_storage.open(csv_file_key, 'r') as csv_file:
+            csv_content = csv_file.read()
+            df = pd.read_csv(StringIO(csv_content))
+    #df = pd.read_csv(csv_path)
     logger.info(f"Type of df at start of update_descriptions: {type(df)}")
     df['Description'] = df['Description'].astype('object')
     failed_lots = []
@@ -106,19 +126,22 @@ def update_descriptions(csv_path, api_key, images_folder_path, session, prompt, 
             while try_again and attempts < 3:
                 try:
                     original_image_name = row['ImageName']
-                    original_image_path = os.path.join(images_folder_path, original_image_name)
+                    original_image_key = posixpath.join(images_folder_path, original_image_name)
 
                     image_name = f"{row['Lot No']}.JPG"
-                    image_path = os.path.join(images_folder_path, image_name)
+                    image_key = posixpath.join(images_folder_path, image_name)
+                    logger.info(f"Trying to access original image at: {original_image_key}")
+                    logger.info(f"Trying to access/rename image at: {image_key}")
 
-                    if os.path.exists(original_image_path):
-                        os.rename(original_image_path, image_path)
-                    elif not os.path.exists(image_path):
-                        logger.error(f"Image file not found for Lot {row['Lot No']}")
-                        continue
+                    #if default_storage.exists(original_image_key):
+                    #    default_storage.save(image_key, default_storage.open(original_image_key))
+                    #    default_storage.delete(original_image_key)
+                    #elif not default_storage.exists(image_key):
+                    #    logger.error(f"Image file not found for Lot {row['Lot No']}")
+                    #    continue
 
                     # Import image
-                    base64_image = encode_image(image_path)
+                    base64_image = encode_image(image_key)
                     # Initialize the message
                     messages = [
                         {
@@ -160,7 +183,13 @@ def update_descriptions(csv_path, api_key, images_folder_path, session, prompt, 
                     df.at[index, 'total_tokens'] = usage['total_tokens']
                     print(f"Updated Lot {row['Lot No']} with new description.")
                     try_again = False
-                    df.to_csv(csv_path, index=False)
+
+                    csv_buffer = StringIO()
+                    df.to_csv(csv_buffer, index=False)
+                    csv_buffer.seek(0)  # Rewind the buffer to the beginning
+
+                    # Save the buffer content to S3
+                    default_storage.save(csv_file_key, ContentFile(csv_buffer.read()))
                     if progress_callback:
                         progress_callback(index + 1, total_rows)
 
@@ -174,14 +203,13 @@ def update_descriptions(csv_path, api_key, images_folder_path, session, prompt, 
                         if "RPD" in error_message or "insufficient_quota" in error_content.get("error", {}).get("type", ""):
                             rate_limit_reached = True
                             logger.info(f"Daily limit or insufficient quota reached. Switching API key. Error: {error_message}")
-                            break
+                            return df, rate_limit_reached
                         elif "RPM" in error_message or "TPM" in error_message:
                             wait_time = parse_wait_time(error_message)
                             logger.info(f"Per minute limit reached. Waiting {wait_time} seconds to retry... Error: {error_message}")
                             time.sleep(wait_time)
-
-                        time.sleep(wait_time)
-
+                        else:
+                            logger.error("Encountered an HTTP 429 error without a recognized rate limit message.")
                         attempts += 1
                     else:
                         logger.error(f"HTTP error occurred: {http_err}")
@@ -196,7 +224,12 @@ def update_descriptions(csv_path, api_key, images_folder_path, session, prompt, 
                     failed_lots.append(row.get('Lot No', 'Unknown'))
                     break
                 finally:
-                    df.to_csv(csv_path, index=False)
+                    csv_buffer = StringIO()
+                    df.to_csv(csv_buffer, index=False)
+                    csv_buffer.seek(0)  # Rewind the buffer to the beginning
+
+                    # Save the buffer content to S3
+                    default_storage.save(csv_file_key, ContentFile(csv_buffer.read()))
 
             if attempts >= 3:
                 logger.info(f"Max retries reached for Lot {row.get('Lot No', 'Unknown')}. Moving to next lot.")
@@ -211,25 +244,34 @@ def update_descriptions(csv_path, api_key, images_folder_path, session, prompt, 
     logger.info(f"Type of df at end of update_descriptions: {type(df)}")
     return df, rate_limit_reached
 
-def generate_descriptions(csv_path, images_folder_path, progress_callback=None):
+def generate_descriptions(csv_file_key, images_folder_path, progress_callback=None):
     logger.info("Starting description generation")
 
     try:
-        df = pd.read_csv(csv_path)
-        with requests.Session() as session:
-            openai.requestssession = session
-            for api_key in api_keys:
-                df, rate_limit_reached = update_descriptions(csv_path, api_key, images_folder_path, session, prompt, progress_callback)
-                if not df['Description'].isna().any() and not (df['Description'] == '').any():
-                    return True
-                if not rate_limit_reached:
-                    break
-            openai.requestssession = None
-        if df['Description'].isna().any() or (df['Description'] == '').any():
-            logger.error("Not all descriptions updated. Missing descriptions remain.")
-            return False
+        if default_storage.exists(csv_file_key):
+            with default_storage.open(csv_file_key, 'r') as csv_file:
+                csv_content = csv_file.read()
+                df = pd.read_csv(StringIO(csv_content))
+
+            with requests.Session() as session:
+                openai.requestssession = session
+                for api_key in api_keys:
+                    df, rate_limit_reached = update_descriptions(csv_file_key, api_key, images_folder_path, session, prompt, progress_callback)
+                    if rate_limit_reached:
+                        logger.info(f"Rate limit reached for key. Switching to next key.")
+                        continue
+                    if not df['Description'].isna().any() and not (df['Description'] == '').any():
+                        return True
+                openai.requestssession = None
+            if df['Description'].isna().any() or (df['Description'] == '').any():
+                logger.error("Not all descriptions updated. Missing descriptions remain.")
+                return False
+            else:
+                return True
         else:
-            return True
+            logger.error(f"CSV file not found at key: {csv_file_key}")
+            return False
+        
     except Exception as e:
         logger.exception(f"Error in generate_descriptions: {e}")
         return False

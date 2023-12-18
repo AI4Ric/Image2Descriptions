@@ -10,7 +10,7 @@ from datetime import datetime
 from django.conf import settings
 from .models import UserUpload
 import zipfile
-from django.http import HttpResponse
+from django.http import HttpResponse, Http404
 from django.views.decorators.http import require_POST
 from .processing import create_dataframe, generate_descriptions
 from .tasks import generate_descriptions_task
@@ -18,6 +18,10 @@ from celery.result import AsyncResult
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import authenticate, login
+from PIL import Image, ExifTags
+import posixpath
+from django.core.files.storage import default_storage
+from django.core.files.base import ContentFile
 
 def user_login(request):
     if request.method == 'POST':
@@ -60,20 +64,20 @@ def file_upload(request):
         if files:
             # Create a timestamped folder for the upload
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            user_folder = os.path.join(settings.MEDIA_ROOT, f'user_{request.user.id}', 'images', timestamp)
+            user_folder = posixpath.join(f'user_{request.user.id}', 'images', timestamp)
 
-            # Create the user-specific and timestamped directories if they don't exist
-            os.makedirs(user_folder, exist_ok=True)
-
+            file_paths = []
             for file in files:
-                fs = FileSystemStorage(location=user_folder)
-                filename = fs.save(file.name, file)
-                file_url = fs.url(filename)
+                file_key = posixpath.join(user_folder, file.name)
 
-            user_upload = UserUpload(user=request.user, status='Initializing', file=os.path.join(timestamp, filename),folder_name=timestamp)
+                if not default_storage.exists(file_key):
+                    default_storage.save(file_key, file)
+                    file_paths.append(default_storage.url(file_key))
+                    print(f"Uploaded file to S3: {file_key}")
+
+            user_upload = UserUpload(user=request.user, status='Initializing', file=file_key,folder_name=timestamp)
             user_upload.save()
 
-            file_paths = [os.path.join(user_folder, file.name) for file in files]
             df = create_dataframe(file_paths, include_vendor_no, include_category)
 
             # Check if dataframe creation was successful
@@ -82,17 +86,20 @@ def file_upload(request):
                 return render(request, 'AIDescGen/home.html', {'error_message': df})
             
             # Save the dataframe to a CSV file in the user's documents directory
-            documents_folder = os.path.join(settings.MEDIA_ROOT, f'user_{request.user.id}', 'documents')
-            os.makedirs(documents_folder, exist_ok=True)  # Create the directory if it doesn't exist
-            csv_filename = os.path.join(documents_folder, f"{timestamp}_data.csv")
-            df.to_csv(csv_filename, index=False)
-            user_upload.csv_file_name = csv_filename
+            documents_folder = posixpath.join(f'user_{request.user.id}', 'documents', timestamp)
+            csv_file_key = posixpath.join(documents_folder, f"{timestamp}_data.csv")
+
+            csv_content = df.to_csv(index=False)
+            default_storage.save(csv_file_key, ContentFile(csv_content))
+            user_upload.csv_file_name = default_storage.url(csv_file_key)
             user_upload.save()
 
             # Cell generate_descriptions function
             upload_id = user_upload.id
-            print(upload_id)
-            task = generate_descriptions_task.delay(upload_id, csv_filename, user_folder)
+            print(file_key)
+            print(user_folder)
+
+            task = generate_descriptions_task.delay(upload_id, csv_file_key, user_folder)
             user_upload.task_id = task.id  # Save the Celery task ID to the upload record
             user_upload.save()
 
@@ -105,7 +112,6 @@ def file_upload(request):
 
 @login_required
 def user_files(request):
-    # Assuming you have a model that tracks file uploads with fields like 'timestamp' and 'status'
     uploads = UserUpload.objects.filter(user=request.user).order_by('-timestamp')
 
     for upload in uploads:
@@ -113,24 +119,93 @@ def user_files(request):
 
     return render(request, 'AIDescGen/user_files.html', {'user_files': uploads})
 
+def resize_and_orient_image(image_path, max_size=2500):
+    with Image.open(image_path) as img:
+        # Correct orientation according to EXIF data
+        try:
+            for orientation in ExifTags.TAGS.keys():
+                if ExifTags.TAGS[orientation] == 'Orientation':
+                    break
+            exif = dict(img._getexif().items())
+
+            if exif[orientation] == 3:
+                img = img.rotate(180, expand=True)
+            elif exif[orientation] == 6:
+                img = img.rotate(270, expand=True)
+            elif exif[orientation] == 8:
+                img = img.rotate(90, expand=True)
+        except (AttributeError, KeyError, IndexError):
+            # Cases: image doesn't have getexif, orientation is not in exif
+            pass
+
+        # Calculate the new size, maintaining the aspect ratio
+        ratio = min(max_size / img.size[0], max_size / img.size[1])
+        new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
+
+        # Resize the image
+        resized_img = img.resize(new_size, Image.Resampling.LANCZOS)
+
+        # Save the resized image to a temporary file
+        temp_path = os.path.join(os.path.dirname(image_path), 'temp_' + os.path.basename(image_path))
+        resized_img.save(temp_path)
+        return temp_path, lambda: os.remove(temp_path) 
+
 
 @login_required
 def download_files(request, folder_name):
     user_folder = os.path.join(settings.MEDIA_ROOT, f'user_{request.user.id}', 'images', folder_name)
+    image_files = sorted([f for f in os.listdir(user_folder) if f.lower().endswith('.jpg')])
 
-    # Create a zip file in memory
-    zip_filename = f"{folder_name}.zip"
-    s = io.BytesIO()
-    with zipfile.ZipFile(s, 'w') as zip_file:
-        for filename in os.listdir(user_folder):
+    # Define max images per zip and initialize counters
+    max_images_per_zip = 48  # For example
+    zip_count = 0
+    images_in_current_zip = 0
+
+    # Create a main zip file in memory if packaging all zips into one
+    main_zip_memory = io.BytesIO()
+    with zipfile.ZipFile(main_zip_memory, 'w') as main_zip:
+
+        # Temporary storage for current batch of images
+        current_zip_memory = io.BytesIO()
+        current_zip = zipfile.ZipFile(current_zip_memory, 'w') 
+
+        for filename in image_files:
             file_path = os.path.join(user_folder, filename)
-            zip_file.write(file_path, filename)
-    # Set the pointer to the start
-    s.seek(0)
+            resized_path, cleanup = resize_and_orient_image(file_path)
+            current_zip.write(resized_path, filename)
+            cleanup() 
 
-    # Create a HTTP response
-    response = HttpResponse(s, content_type='application/zip')
-    response['Content-Disposition'] = f'attachment; filename={zip_filename}'
+            images_in_current_zip += 1
+            if images_in_current_zip >= max_images_per_zip:
+                # Save current zip and start a new one
+                current_zip.close()  # Make sure to close the current zip
+                if zip_count == 0:
+                    zip_filename = "images.zip"
+                else:
+                    zip_filename = f"images_{zip_count}.zip"
+                main_zip.writestr(zip_filename, current_zip_memory.getvalue())
+
+                # Reset for the next batch
+                current_zip_memory = io.BytesIO()
+                current_zip = zipfile.ZipFile(current_zip_memory, 'w')
+                images_in_current_zip = 0
+                zip_count += 1
+
+        # Save the last zip if it has any images
+        if images_in_current_zip > 0:
+            current_zip.close()  # Make sure to close the last zip
+            if zip_count == 0:
+                zip_filename = "images.zip"
+            else:
+                zip_filename = f"images_{zip_count}.zip"
+            main_zip.writestr(zip_filename, current_zip_memory.getvalue())
+
+    # Set the pointer to the start of the main zip
+    main_zip_memory.seek(0)
+
+    # Create a HTTP response with the main zip file
+    response = HttpResponse(main_zip_memory, content_type='application/zip')
+    response['Content-Disposition'] = f'attachment; filename="{folder_name}_images.zip"'
 
     return response
 
@@ -171,15 +246,17 @@ def download_csv(request, task_id):
     # Retrieve the UserUpload object based on the task_id
     upload = get_object_or_404(UserUpload, task_id=task_id, user=request.user)
 
-    # Define the path to the CSV file
-    csv_file_path = os.path.join(settings.MEDIA_ROOT, f'user_{request.user.id}', 'documents', upload.csv_file_name)
+    csv_file_key = upload.csv_file_name
 
-    # Open the file for reading
-    with open(csv_file_path, 'rb') as csv_file:
-        response = HttpResponse(csv_file, content_type='text/csv')
-        # Set the content disposition header to prompt for download
-        response['Content-Disposition'] = f'attachment; filename="result.csv"'
-        return response
+    # Check if the file exists in S3 and open it
+    if default_storage.exists(csv_file_key):
+        with default_storage.open(csv_file_key, 'rb') as csv_file:
+            response = HttpResponse(csv_file, content_type='text/csv')
+            # Set the content disposition header to prompt for download
+            response['Content-Disposition'] = f'attachment; filename="result.csv"'
+            return response
+    else:
+        raise Http404("CSV file not found.")
 
 import logging
 
