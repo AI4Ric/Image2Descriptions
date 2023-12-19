@@ -158,6 +158,7 @@ AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazo
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'  # Redis as a result backend
 
+DATA_UPLOAD_MAX_NUMBER_FILES = 1000
 
 LOGGING = {
     'version': 1,

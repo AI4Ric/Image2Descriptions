@@ -133,12 +133,12 @@ def update_descriptions(csv_file_key, api_key, images_folder_path, session, prom
                     logger.info(f"Trying to access original image at: {original_image_key}")
                     logger.info(f"Trying to access/rename image at: {image_key}")
 
-                    #if default_storage.exists(original_image_key):
-                    #    default_storage.save(image_key, default_storage.open(original_image_key))
-                    #    default_storage.delete(original_image_key)
-                    #elif not default_storage.exists(image_key):
-                    #    logger.error(f"Image file not found for Lot {row['Lot No']}")
-                    #    continue
+                    if default_storage.exists(original_image_key):
+                        default_storage.save(image_key, default_storage.open(original_image_key))
+                        default_storage.delete(original_image_key)
+                    elif not default_storage.exists(image_key):
+                        logger.error(f"Image file not found for Lot {row['Lot No']}")
+                        continue
 
                     # Import image
                     base64_image = encode_image(image_key)
