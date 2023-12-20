@@ -13,7 +13,7 @@ import zipfile
 from django.http import HttpResponse, Http404
 from django.views.decorators.http import require_POST
 from .processing import create_dataframe, generate_descriptions
-from .tasks import generate_descriptions_task
+from .tasks import generate_descriptions_task, preprocess_images_task
 from celery.result import AsyncResult
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -61,6 +61,26 @@ def file_upload(request):
                 error_message = "File naming format is incorrect based on your selections."
                 return render(request, 'AIDescGen/home.html', {'error_message': error_message})
             
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        temp_folder = posixpath.join(f'user_{request.user.id}', 'temp', timestamp)
+            
+        file_urls = []
+        for file in files:
+            file_key = posixpath.join(temp_folder, file.name)
+            default_storage.save(file_key, file)
+            file_url = default_storage.url(file_key)
+            file_urls.append(file_url)
+
+        user_folder = posixpath.join(f'user_{request.user.id}', 'images', timestamp)
+        user_upload = UserUpload(user=request.user, status='Uploading Files', folder_name=user_folder)
+        user_upload.save()
+        task = preprocess_images_task.delay(user_upload.id, file_urls, include_vendor_no, include_category)
+        user_upload.task_id = task.id  # Save the Celery task ID to the upload record
+        user_upload.save()
+
+        success_message = "Your files are being processed. Please check the status on the progress page."
+        return render(request, 'AIDescGen/home.html', {'success_message': success_message})
+        '''    
         if files:
             # Create a timestamped folder for the upload
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -106,6 +126,7 @@ def file_upload(request):
             # Redirect or inform the user of successful upload
             success_message = "Your files are being processed. Please check the status on the progress page."
             return render(request, 'AIDescGen/home.html', {'success_message': success_message})
+        '''
 
     # Your code to handle GET requests or show the form
     return render(request, 'AIDescGen/home.html')
@@ -222,8 +243,15 @@ def delete_files(request):
     # Delete the files and the database records
     for upload in uploads_to_delete:
         try:
-            # This deletes the file from the filesystem
-            upload.file.delete()
+            # Delete related files from S3
+            if upload.folder_name:
+                # List all files in the user's folder
+                _, files = default_storage.listdir(upload.folder_name)
+                for file in files:
+                    file_path = os.path.join(upload.folder_name, file)
+                    if default_storage.exists(file_path):
+                        default_storage.delete(file_path)
+
             # This deletes the database record
             upload.delete()
         except Exception as e:
@@ -243,20 +271,34 @@ def get_task_status(request, task_id):
 
 @login_required
 def download_csv(request, task_id):
-    # Retrieve the UserUpload object based on the task_id
-    upload = get_object_or_404(UserUpload, task_id=task_id, user=request.user)
+    # Retrieve the UserUpload record
+    try:
+        user_upload = UserUpload.objects.get(task_id=task_id)
+    except UserUpload.DoesNotExist:
+        return HttpResponse("Task not found", status=404)
 
-    csv_file_key = upload.csv_file_name
+    # Folder where the files are stored
+    user_folder = user_upload.folder_name
 
-    # Check if the file exists in S3 and open it
-    if default_storage.exists(csv_file_key):
-        with default_storage.open(csv_file_key, 'rb') as csv_file:
-            response = HttpResponse(csv_file, content_type='text/csv')
-            # Set the content disposition header to prompt for download
-            response['Content-Disposition'] = f'attachment; filename="result.csv"'
-            return response
-    else:
-        raise Http404("CSV file not found.")
+    # Create a zip file in memory
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        # List files in the user folder
+        for file_name in default_storage.listdir(user_folder)[1]:
+            if not file_name.endswith('.zip') and not file_name.endswith('.csv'):
+                continue
+            file_path = os.path.join(user_folder, file_name)
+            with default_storage.open(file_path) as f:
+                zip_file.writestr(file_name, f.read())
+
+    # Set the buffer position to the start
+    zip_buffer.seek(0)
+
+    # Create an HTTP response with the zip file
+    response = HttpResponse(zip_buffer, content_type='application/zip')
+    response['Content-Disposition'] = 'attachment; filename="processed_files.zip"'
+
+    return response
 
 import logging
 

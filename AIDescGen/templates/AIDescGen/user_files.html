@@ -28,7 +28,6 @@
                             </div>
                         </td>
                         <td class="actions-cell">
-                            <a href="{% url 'download_files' upload.folder_name %}" class="download-images-link" data-task-id="{{ upload.task_id }}" style="display:none;">Download Images</a>
                             <!-- Initially hidden download link -->
                             <a href="{% url 'download_csv' upload.task_id %}" class="download-images-link" id="download-{{ upload.task_id }}" style="display:none;">Download CSV</a>
                         </td>

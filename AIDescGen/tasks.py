@@ -1,5 +1,5 @@
 from celery import shared_task
-from .processing import generate_descriptions
+from .processing import generate_descriptions, preprocess_images
 from .models import UserUpload
 from django.utils import timezone
 
@@ -29,3 +29,21 @@ def generate_descriptions_task(self, upload_id, csv_file_key, images_folder_path
         upload.save()
         raise e
 
+@shared_task(bind=True)
+def preprocess_images_task(self, upload_id, file_urls, include_vendor_no, include_category):
+    # Update start time
+    upload = UserUpload.objects.get(id=upload_id)
+    user_directory = upload.folder_name
+
+    def update_progress(current, total):
+        progress_percent = int((current / total) * 100)
+        self.update_state(state='ImagesProcessing', meta={'current': current, 'total': total, 'percent': progress_percent})
+
+    try:
+        df = preprocess_images(file_urls, include_vendor_no, include_category, user_directory, progress_callback=update_progress)
+        return df
+    except Exception as e:
+        # Update status on failure
+        upload.status = 'Failed'
+        upload.save()
+        raise e
