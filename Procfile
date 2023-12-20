@@ -1,0 +1,1 @@
+web: gunicorn image2descriptions.wsgi
